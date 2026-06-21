@@ -24,7 +24,7 @@ st.markdown("""
         }
         .main-header {
             text-align: center;
-            padding: 20px;
+            padding: 25px;
             background: linear-gradient(135deg, rgba(0,245,255,0.1), rgba(0,180,255,0.05));
             border-radius: 20px;
             border: 1px solid rgba(0,245,255,0.2);
@@ -118,29 +118,8 @@ st.markdown("""
             transform: scale(1.02);
             box-shadow: 0 8px 25px rgba(0, 245, 255, 0.4);
         }
-        .stSelectbox, .stDateInput {
-            background: rgba(255,255,255,0.05);
-            border-radius: 10px;
-        }
-        .st-emotion-cache-1r6slb0 {
-            background: rgba(255, 255, 255, 0.03);
-        }
         h2, h3 {
             color: #00f5ff !important;
-        }
-        .stat-box {
-            background: rgba(0,245,255,0.05);
-            padding: 15px;
-            border-radius: 10px;
-            border-left: 3px solid #00f5ff;
-            margin: 5px 0;
-        }
-        .stat-box-red {
-            background: rgba(255,107,107,0.05);
-            padding: 15px;
-            border-radius: 10px;
-            border-left: 3px solid #ff6b6b;
-            margin: 5px 0;
         }
         .profit-positive {
             color: #00ff88;
@@ -150,35 +129,6 @@ st.markdown("""
             color: #ff6b6b;
             font-weight: bold;
         }
-        .dataframe {
-            background: rgba(255,255,255,0.02);
-            border-radius: 10px;
-        }
-        .st-emotion-cache-16idsys {
-            background: rgba(255,255,255,0.02);
-        }
-        .download-btn {
-            background: linear-gradient(135deg, #00ff88, #00cc66) !important;
-            box-shadow: 0 4px 15px rgba(0,255,136,0.2) !important;
-        }
-        .download-btn:hover {
-            box-shadow: 0 8px 25px rgba(0,255,136,0.4) !important;
-        }
-        .sidebar-content {
-            padding: 10px 0;
-        }
-        .sidebar-label {
-            color: rgba(255,255,255,0.5);
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-top: 15px;
-            margin-bottom: 5px;
-        }
-        hr {
-            border-color: rgba(255,255,255,0.05);
-            margin: 15px 0;
-        }
         .footer {
             text-align: center;
             color: rgba(255,255,255,0.2);
@@ -187,33 +137,89 @@ st.markdown("""
             border-top: 1px solid rgba(255,255,255,0.05);
             margin-top: 30px;
         }
+        .stDataFrame {
+            background: rgba(255,255,255,0.02);
+            border-radius: 10px;
+        }
+        .info-box {
+            background: rgba(0,245,255,0.05);
+            border-left: 3px solid #00f5ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .warning-box {
+            background: rgba(255,107,107,0.05);
+            border-left: 3px solid #ff6b6b;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
     </style>
 """, unsafe_allow_html=True)
 
-# Генерация тестовых данных для демонстрации
-@st.cache_data(ttl=3600)
+# Функция для определения структуры данных
+def detect_data_structure(df):
+    """Определяет структуру данных и возвращает маппинг колонок"""
+    df_lower = {col.lower(): col for col in df.columns}
+    
+    # Маппинг колонок
+    mapping = {
+        'date': None,
+        'quantity': None,
+        'amount': None,
+        'region': None,
+        'transport': None,
+        'store': None,
+        'type': None
+    }
+    
+    # Поиск колонок
+    date_keywords = ['дата', 'date', 'день', 'day', 'период', 'period', 'b:b']
+    quantity_keywords = ['кол-во', 'количество', 'quantity', 'qty', 'шт', 'd:d']
+    amount_keywords = ['сумма', 'amount', 'total', 'стоимость', 'o:o']
+    region_keywords = ['регион', 'region', 'область', 'area']
+    transport_keywords = ['тип', 'тс', 'transport', 'авто', 'car', 'type']
+    store_keywords = ['магазин', 'store', 'точка', 'shop', 'клиент']
+    
+    for col in df.columns:
+        col_lower = col.lower()
+        if mapping['date'] is None and any(kw in col_lower for kw in date_keywords):
+            mapping['date'] = col
+        elif mapping['quantity'] is None and any(kw in col_lower for kw in quantity_keywords):
+            mapping['quantity'] = col
+        elif mapping['amount'] is None and any(kw in col_lower for kw in amount_keywords):
+            mapping['amount'] = col
+        elif mapping['region'] is None and any(kw in col_lower for kw in region_keywords):
+            mapping['region'] = col
+        elif mapping['transport'] is None and any(kw in col_lower for kw in transport_keywords):
+            mapping['transport'] = col
+        elif mapping['store'] is None and any(kw in col_lower for kw in store_keywords):
+            mapping['store'] = col
+    
+    return mapping
+
+# Генерация тестовых данных
 def generate_test_data():
     """Генерирует тестовые данные для демонстрации"""
     np.random.seed(42)
     
-    # Данные для общей таблицы (Биллинг)
     dates = pd.date_range('2026-01-01', '2026-06-21', freq='D')
     regions = ['Центральный', 'Северо-Западный', 'Южный', 'Приволжский', 'Уральский', 'Сибирский']
     transport_types = ['Грузовик', 'Фургон', 'Рефрижератор', 'Тент']
-    stores = ['Магнит А', 'Магнит Б', 'Магнит В', 'Магнит Г', 'Магнит Д', 'Магнит Е', 'Магнит Ж']
+    stores = ['Магнит А', 'Магнит Б', 'Магнит В', 'Магнит Г', 'Магнит Д', 'Магнит Е']
     
     billing_data = []
     hired_data = []
     
     for date in dates:
-        # Для каждой даты генерируем от 2 до 6 записей
-        for _ in range(np.random.randint(2, 7)):
+        for _ in range(np.random.randint(2, 6)):
             region = np.random.choice(regions)
             transport = np.random.choice(transport_types)
             store = np.random.choice(stores)
             quantity = np.random.randint(80, 500)
             
-            # Биллинг (доход от клиента)
+            # Биллинг
             billing_data.append({
                 'Дата': date,
                 'Регион': region,
@@ -223,185 +229,204 @@ def generate_test_data():
                 'Тип': 'Биллинг'
             })
             
-            # Наём (расходы на исполнителей)
-            hired_quantity = quantity * np.random.uniform(0.7, 0.95)
+            # Наём
             hired_data.append({
                 'Дата': date,
                 'Регион': region,
                 'Тип ТС': transport,
                 'Магазин': store,
-                'Кол-во шт': int(hired_quantity),
+                'Кол-во шт': int(quantity * np.random.uniform(0.7, 0.95)),
                 'Тип': 'Наём'
             })
     
-    billing_df = pd.DataFrame(billing_data)
-    hired_df = pd.DataFrame(hired_data)
-    
-    return billing_df, hired_df
+    return pd.DataFrame(billing_data), pd.DataFrame(hired_data)
 
-# Функция для загрузки данных из Google Sheets
+# Функция для загрузки данных
 @st.cache_data(ttl=3600)
-def load_from_google_sheets():
-    """Пытается загрузить данные из Google Sheets, при ошибке генерирует тестовые"""
+def load_data():
+    """Загрузка данных из различных источников"""
     try:
-        # Пытаемся импортировать gspread
-        import gspread
-        from oauth2client.service_account import ServiceAccountCredentials
+        # Проверяем, есть ли файлы в сессии
+        if 'billing_df' in st.session_state and 'hired_df' in st.session_state:
+            if not st.session_state.billing_df.empty and not st.session_state.hired_df.empty:
+                return st.session_state.billing_df, st.session_state.hired_df
         
-        # Проверяем наличие secrets
-        if 'google' in st.secrets:
-            scope = ['https://spreadsheets.google.com/feeds',
-                    'https://www.googleapis.com/auth/drive']
+        # Пытаемся загрузить из Google Sheets
+        try:
+            import gspread
+            from oauth2client.service_account import ServiceAccountCredentials
             
-            creds_dict = {
-                "type": st.secrets["google"]["type"],
-                "project_id": st.secrets["google"]["project_id"],
-                "private_key_id": st.secrets["google"]["private_key_id"],
-                "private_key": st.secrets["google"]["private_key"],
-                "client_email": st.secrets["google"]["client_email"],
-                "client_id": st.secrets["google"]["client_id"],
-                "auth_uri": st.secrets["google"]["auth_uri"],
-                "token_uri": st.secrets["google"]["token_uri"],
-                "auth_provider_x509_cert_url": st.secrets["google"]["auth_provider_x509_cert_url"],
-                "client_x509_cert_url": st.secrets["google"]["client_x509_cert_url"]
-            }
-            
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-            client = gspread.authorize(creds)
-            sheet = client.open_by_key('1-kv25KvN60XPksMm4YC27r_x9cxn0PevY4npWWdOi4c')
-            
-            # Загружаем общую таблицу (Биллинг)
-            billing_worksheet = sheet.worksheet('Общ таблица')
-            billing_data = billing_worksheet.get_all_values()
-            
-            if len(billing_data) > 1:
-                headers = billing_data[0]
-                rows = billing_data[1:]
-                billing_df = pd.DataFrame(rows, columns=headers)
+            if 'google' in st.secrets:
+                scope = ['https://spreadsheets.google.com/feeds',
+                        'https://www.googleapis.com/auth/drive']
                 
-                # Преобразуем колонки
-                billing_df['Дата'] = pd.to_datetime(billing_df['Дата'])
-                billing_df['Кол-во шт'] = pd.to_numeric(billing_df['Кол-во шт'], errors='coerce')
-                billing_df['Тип'] = 'Биллинг'
-                
-                # Переименовываем колонки для соответствия
-                col_map = {
-                    'B:B': 'Дата',
-                    'D:D': 'Кол-во шт',
-                    'O:O': 'Сумма'
+                creds_dict = {
+                    "type": st.secrets["google"]["type"],
+                    "project_id": st.secrets["google"]["project_id"],
+                    "private_key_id": st.secrets["google"]["private_key_id"],
+                    "private_key": st.secrets["google"]["private_key"],
+                    "client_email": st.secrets["google"]["client_email"],
+                    "client_id": st.secrets["google"]["client_id"],
+                    "auth_uri": st.secrets["google"]["auth_uri"],
+                    "token_uri": st.secrets["google"]["token_uri"],
+                    "auth_provider_x509_cert_url": st.secrets["google"]["auth_provider_x509_cert_url"],
+                    "client_x509_cert_url": st.secrets["google"]["client_x509_cert_url"]
                 }
                 
-                # Загружаем сводную по дням (Наём)
-                try:
-                    hired_worksheet = sheet.worksheet('Сводная по дням')
-                    hired_data = hired_worksheet.get_all_values()
-                    
-                    if len(hired_data) > 1:
-                        hired_headers = hired_data[0]
-                        hired_rows = hired_data[1:]
-                        hired_df = pd.DataFrame(hired_rows, columns=hired_headers)
-                        hired_df['Дата'] = pd.to_datetime(hired_df['Дата'])
-                        hired_df['Кол-во шт'] = pd.to_numeric(hired_df['Кол-во шт'], errors='coerce')
-                        hired_df['Тип'] = 'Наём'
-                    else:
-                        hired_df = pd.DataFrame()
-                except:
-                    hired_df = pd.DataFrame()
+                creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+                client = gspread.authorize(creds)
+                sheet = client.open_by_key('1-kv25KvN60XPksMm4YC27r_x9cxn0PevY4npWWdOi4c')
                 
-                return billing_df, hired_df
-            else:
-                st.warning("Таблица пуста, используются тестовые данные")
-                return generate_test_data()
-        else:
-            st.info("Secrets не настроены, используются тестовые данные")
-            return generate_test_data()
-            
+                # Загружаем общую таблицу
+                billing_ws = sheet.worksheet('Общ таблица')
+                billing_data = billing_ws.get_all_values()
+                
+                if len(billing_data) > 1:
+                    headers = billing_data[0]
+                    rows = billing_data[1:]
+                    billing_df = pd.DataFrame(rows, columns=headers)
+                    
+                    # Определяем структуру данных
+                    mapping = detect_data_structure(billing_df)
+                    
+                    # Преобразуем данные
+                    if mapping['date']:
+                        billing_df['Дата'] = pd.to_datetime(billing_df[mapping['date']], errors='coerce')
+                    if mapping['quantity']:
+                        billing_df['Кол-во шт'] = pd.to_numeric(billing_df[mapping['quantity']], errors='coerce')
+                    if mapping['amount']:
+                        billing_df['Сумма'] = pd.to_numeric(billing_df[mapping['amount']], errors='coerce')
+                    if mapping['region']:
+                        billing_df['Регион'] = billing_df[mapping['region']]
+                    if mapping['transport']:
+                        billing_df['Тип ТС'] = billing_df[mapping['transport']]
+                    if mapping['store']:
+                        billing_df['Магазин'] = billing_df[mapping['store']]
+                    
+                    billing_df['Тип'] = 'Биллинг'
+                    
+                    # Загружаем сводную по дням (наём)
+                    try:
+                        hired_ws = sheet.worksheet('Сводная по дням')
+                        hired_data = hired_ws.get_all_values()
+                        
+                        if len(hired_data) > 1:
+                            hired_headers = hired_data[0]
+                            hired_rows = hired_data[1:]
+                            hired_df = pd.DataFrame(hired_rows, columns=hired_headers)
+                            
+                            mapping_hired = detect_data_structure(hired_df)
+                            
+                            if mapping_hired['date']:
+                                hired_df['Дата'] = pd.to_datetime(hired_df[mapping_hired['date']], errors='coerce')
+                            if mapping_hired['quantity']:
+                                hired_df['Кол-во шт'] = pd.to_numeric(hired_df[mapping_hired['quantity']], errors='coerce')
+                            if mapping_hired['region']:
+                                hired_df['Регион'] = hired_df[mapping_hired['region']]
+                            if mapping_hired['transport']:
+                                hired_df['Тип ТС'] = hired_df[mapping_hired['transport']]
+                            if mapping_hired['store']:
+                                hired_df['Магазин'] = hired_df[mapping_hired['store']]
+                            
+                            hired_df['Тип'] = 'Наём'
+                            
+                            # Сохраняем в сессию
+                            st.session_state.billing_df = billing_df
+                            st.session_state.hired_df = hired_df
+                            
+                            return billing_df, hired_df
+                    except Exception as e:
+                        st.warning(f"Не удалось загрузить данные по найму: {e}")
+                    
+                    return billing_df, pd.DataFrame()
+        except Exception as e:
+            st.warning(f"Не удалось загрузить данные из Google Sheets: {e}")
+        
+        # Если не удалось загрузить, генерируем тестовые
+        billing_df, hired_df = generate_test_data()
+        st.session_state.billing_df = billing_df
+        st.session_state.hired_df = hired_df
+        return billing_df, hired_df
+        
     except Exception as e:
-        st.warning(f"Не удалось загрузить данные из Google Sheets: {e}")
-        st.info("Используются тестовые данные для демонстрации")
+        st.error(f"Ошибка загрузки данных: {e}")
         return generate_test_data()
 
-# Функция для создания Excel выгрузки по найму
-def create_hired_excel(hired_df, filename="naym_analytics.xlsx"):
-    """Создает Excel файл с данными по найму"""
+# Функция для создания Excel выгрузки
+def create_excel_export(billing_df, hired_df, filename="analytics_export.xlsx"):
+    """Создает Excel файл с данными"""
     output = io.BytesIO()
     
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # Основные данные по найму
-        hired_df.to_excel(writer, sheet_name='Наём_данные', index=False)
+        # Данные по биллингу
+        billing_export = billing_df[['Дата', 'Регион', 'Тип ТС', 'Магазин', 'Кол-во шт']].copy()
+        billing_export.to_excel(writer, sheet_name='Биллинг', index=False)
         
-        # Сводка по дням
-        daily_hired = hired_df.groupby('Дата').agg({
-            'Кол-во шт': 'sum'
-        }).reset_index()
-        daily_hired.to_excel(writer, sheet_name='Наём_по_дням', index=False)
-        
-        # Сводка по регионам
-        region_hired = hired_df.groupby('Регион').agg({
-            'Кол-во шт': 'sum'
-        }).reset_index()
-        region_hired.to_excel(writer, sheet_name='Наём_по_регионам', index=False)
-        
-        # Сводка по типам ТС
-        transport_hired = hired_df.groupby('Тип ТС').agg({
-            'Кол-во шт': 'sum'
-        }).reset_index()
-        transport_hired.to_excel(writer, sheet_name='Наём_по_ТС', index=False)
-        
-        # Детализация по магазинам
-        store_hired = hired_df.groupby(['Дата', 'Регион', 'Магазин']).agg({
-            'Кол-во шт': 'sum'
-        }).reset_index()
-        store_hired.to_excel(writer, sheet_name='Наём_по_магазинам', index=False)
-        
-        # Сводная таблица
-        pivot_table = pd.pivot_table(
-            hired_df,
-            values='Кол-во шт',
-            index=['Дата'],
-            columns=['Регион'],
-            aggfunc='sum',
-            fill_value=0
-        )
-        pivot_table.to_excel(writer, sheet_name='Сводная_по_регионам')
+        # Данные по найму
+        if not hired_df.empty:
+            hired_export = hired_df[['Дата', 'Регион', 'Тип ТС', 'Магазин', 'Кол-во шт']].copy()
+            hired_export.to_excel(writer, sheet_name='Наём', index=False)
+            
+            # Сравнение
+            daily_billing = billing_df.groupby('Дата')['Кол-во шт'].sum().reset_index()
+            daily_billing.columns = ['Дата', 'Биллинг_шт']
+            
+            daily_hired = hired_df.groupby('Дата')['Кол-во шт'].sum().reset_index()
+            daily_hired.columns = ['Дата', 'Наём_шт']
+            
+            comparison = pd.merge(daily_billing, daily_hired, on='Дата', how='outer').fillna(0)
+            comparison['Разница'] = comparison['Биллинг_шт'] - comparison['Наём_шт']
+            comparison.to_excel(writer, sheet_name='Сравнение_по_дням', index=False)
+            
+            # Сводка по регионам
+            region_billing = billing_df.groupby('Регион')['Кол-во шт'].sum().reset_index()
+            region_billing.columns = ['Регион', 'Биллинг_шт']
+            
+            region_hired = hired_df.groupby('Регион')['Кол-во шт'].sum().reset_index()
+            region_hired.columns = ['Регион', 'Наём_шт']
+            
+            region_summary = pd.merge(region_billing, region_hired, on='Регион', how='outer').fillna(0)
+            region_summary['Разница'] = region_summary['Биллинг_шт'] - region_summary['Наём_шт']
+            region_summary.to_excel(writer, sheet_name='Сводка_по_регионам', index=False)
     
     output.seek(0)
     return output
 
-# Основная функция дашборда
+# Основная функция
 def main():
     # Заголовок
     st.markdown("""
         <div class="main-header">
             <h1>🚛 Аналитика логистики</h1>
-            <p>Сравнительный анализ доходов от клиента и расходов на наём</p>
+            <p>📊 Доход от клиента (Биллинг) vs Расходы на наём</p>
         </div>
     """, unsafe_allow_html=True)
     
     # Загрузка данных
-    with st.spinner("Загрузка данных..."):
-        billing_df, hired_df = load_from_google_sheets()
+    with st.spinner("🔄 Загрузка данных..."):
+        billing_df, hired_df = load_data()
     
-    # Если данные пустые, генерируем тестовые
-    if billing_df.empty:
-        billing_df, hired_df = generate_test_data()
-    
-    # Преобразование дат
+    # Очистка данных
+    billing_df = billing_df.dropna(subset=['Кол-во шт'])
     billing_df['Дата'] = pd.to_datetime(billing_df['Дата'])
+    
     if not hired_df.empty:
+        hired_df = hired_df.dropna(subset=['Кол-во шт'])
         hired_df['Дата'] = pd.to_datetime(hired_df['Дата'])
     
-    # Боковая панель с фильтрами
+    # Боковая панель
     with st.sidebar:
         st.markdown("""
-            <div class="sidebar-content">
+            <div style="padding: 10px 0;">
                 <h3 style="color: #00f5ff; margin-bottom: 20px;">🎯 Фильтры</h3>
             </div>
         """, unsafe_allow_html=True)
         
         # Выбор периода
-        min_date = min(billing_df['Дата'].min().date(), hired_df['Дата'].min().date() if not hired_df.empty else billing_df['Дата'].min().date())
-        max_date = max(billing_df['Дата'].max().date(), hired_df['Дата'].max().date() if not hired_df.empty else billing_df['Дата'].max().date())
+        min_date = min(billing_df['Дата'].min().date(), 
+                      hired_df['Дата'].min().date() if not hired_df.empty else billing_df['Дата'].min().date())
+        max_date = max(billing_df['Дата'].max().date(), 
+                      hired_df['Дата'].max().date() if not hired_df.empty else billing_df['Дата'].max().date())
         
         date_range = st.date_input(
             "📅 Период",
@@ -424,8 +449,6 @@ def main():
             billing_filtered = billing_df
             hired_filtered = hired_df
         
-        st.markdown("<hr>", unsafe_allow_html=True)
-        
         # Фильтр по регионам
         all_regions = sorted(set(billing_filtered['Регион'].unique()).union(
             set(hired_filtered['Регион'].unique()) if not hired_filtered.empty else set()
@@ -434,7 +457,7 @@ def main():
         regions = st.multiselect(
             "📍 Регионы",
             options=all_regions,
-            default=all_regions
+            default=all_regions[:3] if len(all_regions) > 3 else all_regions
         )
         
         if regions:
@@ -444,56 +467,29 @@ def main():
         
         st.markdown("<hr>", unsafe_allow_html=True)
         
-        # Фильтр по типам ТС
-        all_transport = sorted(set(billing_filtered['Тип ТС'].unique()).union(
-            set(hired_filtered['Тип ТС'].unique()) if not hired_filtered.empty else set()
-        ))
-        
-        transport_types = st.multiselect(
-            "🚚 Тип ТС",
-            options=all_transport,
-            default=all_transport
-        )
-        
-        if transport_types:
-            billing_filtered = billing_filtered[billing_filtered['Тип ТС'].isin(transport_types)]
-            if not hired_filtered.empty:
-                hired_filtered = hired_filtered[hired_filtered['Тип ТС'].isin(transport_types)]
-        
-        st.markdown("<hr>", unsafe_allow_html=True)
-        
-        # Кнопка обновления
-        if st.button("🔄 Обновить данные", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-        
-        st.markdown("""
-            <div style="margin-top: 20px; padding: 10px; background: rgba(0,245,255,0.05); border-radius: 10px;">
-                <p style="color: rgba(255,255,255,0.4); font-size: 0.7rem; text-align: center;">
-                    Данные обновлены: {}
+        # Информация о данных
+        st.markdown(f"""
+            <div style="background: rgba(0,245,255,0.03); padding: 15px; border-radius: 10px;">
+                <p style="color: rgba(255,255,255,0.4); font-size: 0.8rem; margin: 0;">
+                    📊 Всего записей:<br>
+                    Биллинг: <b style="color: #00f5ff;">{len(billing_filtered):,}</b><br>
+                    Наём: <b style="color: #ff6b6b;">{len(hired_filtered):,}</b>
+                </p>
+                <p style="color: rgba(255,255,255,0.3); font-size: 0.7rem; margin-top: 10px;">
+                    Обновлено: {datetime.now().strftime("%d.%m.%Y %H:%M")}
                 </p>
             </div>
-        """.format(datetime.now().strftime("%d.%m.%Y %H:%M")), unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     
-    # Основной контент
-    # ===== КЛЮЧЕВЫЕ МЕТРИКИ =====
+    # Ключевые метрики
     st.markdown("## 📊 Ключевые показатели")
     
     col1, col2, col3, col4 = st.columns(4)
     
-    # Метрики по биллингу
-    billing_quantity = billing_filtered['Кол-во шт'].sum()
-    billing_days = billing_filtered['Дата'].nunique()
-    billing_avg_per_day = billing_quantity / billing_days if billing_days > 0 else 0
-    
-    # Метрики по найму
-    hired_quantity = hired_filtered['Кол-во шт'].sum() if not hired_filtered.empty else 0
-    hired_days = hired_filtered['Дата'].nunique() if not hired_filtered.empty else 0
-    hired_avg_per_day = hired_quantity / hired_days if hired_days > 0 else 0
-    
-    # Разница
-    diff_quantity = billing_quantity - hired_quantity
-    diff_percent = (diff_quantity / billing_quantity * 100) if billing_quantity > 0 else 0
+    billing_total = billing_filtered['Кол-во шт'].sum()
+    hired_total = hired_filtered['Кол-во шт'].sum() if not hired_filtered.empty else 0
+    profit = billing_total - hired_total
+    efficiency = billing_total / hired_total if hired_total > 0 else 0
     
     with col1:
         st.markdown(f"""
@@ -501,9 +497,8 @@ def main():
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <span style="font-size: 2rem;">💰</span>
                     <div>
-                        <div class="metric-value">{billing_quantity:,.0f}</div>
+                        <div class="metric-value">{billing_total:,.0f}</div>
                         <div class="metric-label">Биллинг (доход от клиента)</div>
-                        <div class="metric-sub">в среднем {billing_avg_per_day:,.0f} шт/день</div>
                     </div>
                 </div>
             </div>
@@ -515,33 +510,28 @@ def main():
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <span style="font-size: 2rem;">💳</span>
                     <div>
-                        <div class="metric-value" style="background: linear-gradient(135deg, #ff6b6b, #ff3366); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">{hired_quantity:,.0f}</div>
+                        <div class="metric-value" style="background: linear-gradient(135deg, #ff6b6b, #ff3366); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">{hired_total:,.0f}</div>
                         <div class="metric-label">Наём (расходы)</div>
-                        <div class="metric-sub">в среднем {hired_avg_per_day:,.0f} шт/день</div>
                     </div>
                 </div>
             </div>
         """, unsafe_allow_html=True)
     
     with col3:
-        profit_color = "metric-value" if diff_quantity >= 0 else "metric-value-negative"
+        profit_class = "metric-value" if profit >= 0 else "metric-value-negative"
         st.markdown(f"""
             <div class="metric-card">
                 <div style="display: flex; align-items: center; gap: 10px;">
                     <span style="font-size: 2rem;">📈</span>
                     <div>
-                        <div class="{profit_color}">{diff_quantity:+,.0f}</div>
+                        <div class="{profit_class}">{profit:+,.0f}</div>
                         <div class="metric-label">Чистая прибыль (шт)</div>
-                        <div class="metric-sub" style="color: {'#00ff88' if diff_quantity >= 0 else '#ff6b6b'};">
-                            {diff_percent:+.1f}% от биллинга
-                        </div>
                     </div>
                 </div>
             </div>
         """, unsafe_allow_html=True)
     
     with col4:
-        efficiency = (billing_quantity / hired_quantity) if hired_quantity > 0 else 0
         st.markdown(f"""
             <div class="metric-card">
                 <div style="display: flex; align-items: center; gap: 10px;">
@@ -549,7 +539,6 @@ def main():
                     <div>
                         <div class="metric-value" style="background: linear-gradient(135deg, #ffd93d, #ff9a3d); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">{efficiency:.2f}x</div>
                         <div class="metric-label">Эффективность</div>
-                        <div class="metric-sub">Биллинг / Наём</div>
                     </div>
                 </div>
             </div>
@@ -557,7 +546,7 @@ def main():
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # ===== ГРАФИКИ =====
+    # Графики
     st.markdown("## 📈 Аналитика")
     
     col1, col2 = st.columns(2)
@@ -566,7 +555,6 @@ def main():
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.markdown("#### 📊 Динамика по дням")
         
-        # Объединяем данные для графика
         daily_billing = billing_filtered.groupby('Дата')['Кол-во шт'].sum().reset_index()
         daily_billing['Тип'] = 'Биллинг'
         
@@ -603,7 +591,6 @@ def main():
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.markdown("#### 🗺️ Распределение по регионам")
         
-        # Данные по регионам
         billing_regions = billing_filtered.groupby('Регион')['Кол-во шт'].sum().reset_index()
         billing_regions['Тип'] = 'Биллинг'
         
@@ -637,72 +624,12 @@ def main():
         st.plotly_chart(fig, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # ===== ДОПОЛНИТЕЛЬНЫЕ ГРАФИКИ =====
-    col1, col2 = st.columns(2)
+    # Детализация и выгрузка
+    st.markdown("## 📋 Детализация и выгрузка")
+    
+    col1, col2 = st.columns([3, 1])
     
     with col1:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown("#### 🚚 Распределение по типам ТС")
-        
-        billing_transport = billing_filtered.groupby('Тип ТС')['Кол-во шт'].sum().reset_index()
-        
-        fig = px.pie(
-            billing_transport,
-            values='Кол-во шт',
-            names='Тип ТС',
-            color_discrete_sequence=px.colors.sequential.Teal_r,
-            hole=0.4
-        )
-        fig.update_traces(textposition='inside', textinfo='percent+label', textfont_color='white')
-        fig.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font_color='white',
-            showlegend=False,
-            margin=dict(l=0, r=0, t=10, b=0),
-            height=300
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown("#### 📊 Соотношение Биллинг vs Наём")
-        
-        comparison_data = pd.DataFrame({
-            'Категория': ['Биллинг', 'Наём'],
-            'Кол-во шт': [billing_quantity, hired_quantity]
-        })
-        
-        fig = px.bar(
-            comparison_data,
-            x='Категория',
-            y='Кол-во шт',
-            color='Категория',
-            color_discrete_map={'Биллинг': '#00f5ff', 'Наём': '#ff6b6b'},
-            text='Кол-во шт'
-        )
-        fig.update_traces(textposition='outside', textfont_color='white')
-        fig.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font_color='white',
-            showlegend=False,
-            margin=dict(l=0, r=0, t=10, b=0),
-            height=300,
-            xaxis=dict(gridcolor='rgba(255,255,255,0.05)', title=""),
-            yaxis=dict(gridcolor='rgba(255,255,255,0.05)', title="Кол-во шт")
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # ===== ДЕТАЛЬНАЯ ТАБЛИЦА =====
-    st.markdown("## 📋 Детализация данных")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        # Выбор даты для детализации
         detail_date = st.date_input(
             "📅 Выберите дату",
             value=billing_filtered['Дата'].max().date() if not billing_filtered.empty else datetime.now().date(),
@@ -712,27 +639,22 @@ def main():
     
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
-        # Кнопка выгрузки Excel
-        if not hired_filtered.empty:
-            if st.button("📥 Выгрузить данные по найму в Excel", use_container_width=True):
-                excel_file = create_hired_excel(hired_filtered)
-                b64 = base64.b64encode(excel_file.getvalue()).decode()
-                href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="naym_analytics.xlsx" style="text-decoration: none;">📊 Скачать Excel</a>'
-                st.markdown(href, unsafe_allow_html=True)
-        else:
-            st.info("Нет данных по найму для выгрузки")
+        if st.button("📥 Выгрузить в Excel", use_container_width=True):
+            excel_file = create_excel_export(billing_filtered, hired_filtered)
+            b64 = base64.b64encode(excel_file.getvalue()).decode()
+            href = f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="analytics_export.xlsx" style="text-decoration: none;">📊 Скачать Excel</a>'
+            st.markdown(href, unsafe_allow_html=True)
     
-    # Детальная таблица по выбранной дате
+    # Детальная таблица
     detail_billing = billing_filtered[billing_filtered['Дата'].dt.date == detail_date]
     
     if not detail_billing.empty:
-        # Группировка данных
         detail_table = detail_billing.groupby(['Регион', 'Тип ТС']).agg({
             'Магазин': lambda x: ', '.join(x.unique()),
             'Кол-во шт': 'sum'
         }).reset_index()
         
-        # Добавляем информацию о найме для этой даты
+        # Добавляем данные по найму
         if not hired_filtered.empty:
             detail_hired = hired_filtered[hired_filtered['Дата'].dt.date == detail_date]
             if not detail_hired.empty:
@@ -745,7 +667,6 @@ def main():
         else:
             detail_table['Наём_шт'] = 0
         
-        # Расчет разницы
         detail_table['Разница'] = detail_table['Кол-во шт'] - detail_table['Наём_шт']
         
         st.dataframe(
@@ -764,30 +685,29 @@ def main():
     else:
         st.info("📭 Нет данных за выбранную дату")
     
-    # ===== СТАТИСТИКА ПО РЕГИОНАМ =====
-    st.markdown("## 📊 Статистика по регионам")
+    # Сводка по регионам
+    st.markdown("## 📊 Сводка по регионам")
     
-    # Создаем сводную таблицу
-    region_stats = billing_filtered.groupby('Регион').agg({
+    region_summary = billing_filtered.groupby('Регион').agg({
         'Кол-во шт': 'sum',
         'Магазин': 'nunique'
     }).reset_index()
-    region_stats.columns = ['Регион', 'Биллинг_шт', 'Кол-во_точек']
+    region_summary.columns = ['Регион', 'Биллинг_шт', 'Кол-во_точек']
     
     if not hired_filtered.empty:
-        hired_stats = hired_filtered.groupby('Регион')['Кол-во шт'].sum().reset_index()
-        hired_stats.columns = ['Регион', 'Наём_шт']
-        region_stats = region_stats.merge(hired_stats, on='Регион', how='left')
-        region_stats['Наём_шт'] = region_stats['Наём_шт'].fillna(0)
+        hired_summary = hired_filtered.groupby('Регион')['Кол-во шт'].sum().reset_index()
+        hired_summary.columns = ['Регион', 'Наём_шт']
+        region_summary = region_summary.merge(hired_summary, on='Регион', how='left')
+        region_summary['Наём_шт'] = region_summary['Наём_шт'].fillna(0)
     else:
-        region_stats['Наём_шт'] = 0
+        region_summary['Наём_шт'] = 0
     
-    region_stats['Разница'] = region_stats['Биллинг_шт'] - region_stats['Наём_шт']
-    region_stats['Эффективность'] = (region_stats['Биллинг_шт'] / region_stats['Наём_шт']).round(2)
-    region_stats['Эффективность'] = region_stats['Эффективность'].replace([float('inf'), -float('inf')], 0)
+    region_summary['Разница'] = region_summary['Биллинг_шт'] - region_summary['Наём_шт']
+    region_summary['Эффективность'] = (region_summary['Биллинг_шт'] / region_summary['Наём_шт']).round(2)
+    region_summary['Эффективность'] = region_summary['Эффективность'].replace([float('inf'), -float('inf')], 0)
     
     st.dataframe(
-        region_stats,
+        region_summary,
         use_container_width=True,
         column_config={
             'Регион': '📍 Регион',
@@ -799,28 +719,6 @@ def main():
         },
         hide_index=True
     )
-    
-    # ===== ДОПОЛНИТЕЛЬНАЯ ИНФОРМАЦИЯ =====
-    with st.expander("📌 О дашборде", expanded=False):
-        st.markdown("""
-            ### Как это работает:
-            
-            **📊 Основная логика:**
-            - **Биллинг** - это доход, который вы получаете от клиента (Магнит)
-            - **Наём** - это расходы на исполнителей (ваши затраты)
-            - **Чистая прибыль** = Биллинг - Наём (в штуках)
-            
-            **🎯 Что показывает дашборд:**
-            1. Ежедневную динамику доходов и расходов
-            2. Распределение по регионам и типам ТС
-            3. Эффективность работы в каждом регионе
-            4. Детализацию по дням и магазинам
-            
-            **📥 Выгрузка Excel:**
-            - Нажмите кнопку "Выгрузить данные по найму в Excel"
-            - Получите детальный отчет по расходам на наём
-            - Включает сводки по дням, регионам, ТС и магазинам
-        """)
     
     # Footer
     st.markdown("""
