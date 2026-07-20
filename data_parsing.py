@@ -404,12 +404,17 @@ def _sla_flag(row):
 def build_billing_workbook(ship_df: pd.DataFrame, tariffs_df: pd.DataFrame) -> bytes:
     """
     Собирает Excel-файл в формате биллинга заказчика (4 листа):
-      - "Сводная" — иерархия Регион тариф -> Транспорт -> Рейс (сумма, кол-во).
+      - "Сводная" — иерархия Регион тариф -> Транспорт -> Дата -> Рейс
+        (сумма, кол-во).
       - "Сводная по дням" — Дата отгрузки, Итого сумма, Кол-во штук, Сумма за шт.
       - "Реестр" — построчно по каждому заказу, колонки как в примере
         заказчика (Дата отгрузки, Заказ, Рейс, Кол-во штук, ID магазина,
         Магазин, Адрес, Координаты x2, Регион, Регион тариф, Авто,
         1 точка, 2 точка и далее, Грузчик экспедитор, Итого сумма).
+        Оформлен как настоящая Excel-таблица (с автофильтром) — это
+        источник данных, из которого в Excel за 2 клика строится живая
+        сводная таблица с двойным кликом "Показать детали" (см. пояснение
+        в приложении/README).
       - "тарифы" — справочник ставок (из живого листа "тарифы" в таблице,
         либо встроенный по умолчанию, см. default_tariffs_df()).
 
@@ -419,16 +424,16 @@ def build_billing_workbook(ship_df: pd.DataFrame, tariffs_df: pd.DataFrame) -> b
     from io import BytesIO as _BytesIO
 
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font
+    from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.table import Table, TableStyleInfo
 
     wb = Workbook()
 
     bold = Font(bold=True)
     header_font = Font(bold=True, color="FFFFFF")
-    from openpyxl.styles import PatternFill
-
     header_fill = PatternFill("solid", fgColor="4C78A8")
+    DATE_FMT = "YYYY-MM-DD"
 
     def _style_header(ws, row, ncols):
         for c in range(1, ncols + 1):
@@ -446,15 +451,15 @@ def build_billing_workbook(ship_df: pd.DataFrame, tariffs_df: pd.DataFrame) -> b
                     max_len = max(max_len, len(str(v)))
             ws.column_dimensions[letter].width = min(max_len + 2, max_width)
 
-    # ---------------- Лист "Сводная" (Регион тариф -> Транспорт -> Рейс) ----------------
+    # ---------------- Лист "Сводная" (Регион тариф -> Транспорт -> Дата -> Рейс) ----------------
     ws1 = wb.active
     ws1.title = "Сводная"
-    ws1.append(["Регион / Авто / Рейс", "Итого сумма", "Кол-во штук"])
+    ws1.append(["Регион / Авто / Дата / Рейс", "Итого сумма", "Кол-во штук"])
     _style_header(ws1, 1, 3)
 
     if not ship_df.empty:
         route_level = (
-            ship_df.groupby(["Регион_тариф", "Транспорт", "Маршрут_ID"], dropna=False)
+            ship_df.groupby(["Регион_тариф", "Транспорт", "Дата", "Маршрут_ID"], dropna=False)
             .agg(Сумма=("Итого_сумма", "sum"), Кол_во=("Кол_во_шт", "sum"))
             .reset_index()
         )
@@ -471,11 +476,18 @@ def build_billing_workbook(ship_df: pd.DataFrame, tariffs_df: pd.DataFrame) -> b
                 transp_row = ws1.max_row + 1
                 ws1.append([transp, transp_grp["Сумма"].sum(), transp_grp["Кол_во"].sum()])
                 ws1.cell(row=transp_row, column=1).alignment = Alignment(indent=1)
+                ws1.cell(row=transp_row, column=1).font = bold
 
-                for _, route_row in transp_grp.sort_values("Маршрут_ID").iterrows():
-                    r = ws1.max_row + 1
-                    ws1.append([route_row["Маршрут_ID"], route_row["Сумма"], route_row["Кол_во"]])
-                    ws1.cell(row=r, column=1).alignment = Alignment(indent=2)
+                for date_val, date_grp in transp_grp.groupby("Дата", dropna=False):
+                    date_row = ws1.max_row + 1
+                    ws1.append([date_val.date(), date_grp["Сумма"].sum(), date_grp["Кол_во"].sum()])
+                    ws1.cell(row=date_row, column=1).alignment = Alignment(indent=2)
+                    ws1.cell(row=date_row, column=1).number_format = DATE_FMT
+
+                    for _, route_row in date_grp.sort_values("Маршрут_ID").iterrows():
+                        r = ws1.max_row + 1
+                        ws1.append([route_row["Маршрут_ID"], route_row["Сумма"], route_row["Кол_во"]])
+                        ws1.cell(row=r, column=1).alignment = Alignment(indent=3)
 
         total_row = ws1.max_row + 1
         ws1.append(["Итого", grand_total_sum, grand_total_qty])
@@ -508,18 +520,18 @@ def build_billing_workbook(ship_df: pd.DataFrame, tariffs_df: pd.DataFrame) -> b
     for col, width in zip("ABCD", [16, 16, 14, 14]):
         ws2.column_dimensions[col].width = width
     for row in ws2.iter_rows(min_row=2, max_row=ws2.max_row, min_col=1, max_col=1):
-        row[0].number_format = "DD.MM.YYYY"
+        row[0].number_format = DATE_FMT
 
-    # ---------------- Лист "Реестр" ----------------
+    # ---------------- Лист "Реестр" (настоящая Excel-таблица) ----------------
     ws3 = wb.create_sheet("Реестр")
     registry_cols = [
         "Дата отгрузки", "Заказ", "Рейс", "Кол-во штук", "ID магазина", "Магазин", "Адрес",
-        "Координаты", "Координаты", "Регион", "Регион тариф", "Авто",
+        "Координаты", "Координаты2", "Регион", "Регион тариф", "Авто",
         "1 точка", "2 точка и далее", "Грузчик экспедитор", "Итого сумма",
     ]
     ws3.append(registry_cols)
-    _style_header(ws3, 1, len(registry_cols))
 
+    n_data_rows = 0
     if not ship_df.empty:
         reg = ship_df.sort_values(["Дата", "Маршрут_ID", "Заказ"])
         for _, row in reg.iterrows():
@@ -543,9 +555,21 @@ def build_billing_workbook(ship_df: pd.DataFrame, tariffs_df: pd.DataFrame) -> b
                     row["Итого_сумма"],
                 ]
             )
+            n_data_rows += 1
+
     for row in ws3.iter_rows(min_row=2, max_row=ws3.max_row, min_col=1, max_col=1):
-        row[0].number_format = "DD.MM.YYYY"
+        row[0].number_format = DATE_FMT
     _autosize(ws3, len(registry_cols), max_width=40)
+
+    if n_data_rows > 0:
+        last_col_letter = get_column_letter(len(registry_cols))
+        table_ref = f"A1:{last_col_letter}{n_data_rows + 1}"
+        tbl = Table(displayName="ТаблицаРеестр", ref=table_ref)
+        tbl.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium2", showRowStripes=True, showFirstColumn=False,
+            showLastColumn=False, showColumnStripes=False,
+        )
+        ws3.add_table(tbl)
 
     # ---------------- Лист "тарифы" ----------------
     ws4 = wb.create_sheet("тарифы")
