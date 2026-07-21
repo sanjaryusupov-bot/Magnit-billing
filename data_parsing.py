@@ -263,15 +263,19 @@ def add_route_economics(ship_df: pd.DataFrame, region_tariff_map: dict = None) -
            точку.
 
     Дополнительно (для биллинг-реестра, формат как в примере заказчика):
-        - Маршрут_ID — идентификатор рейса вида "1M-00xxxxx" (номер первого
-          заказа в рейсе), уникальный в пределах всей выгрузки (в отличие от
-          "Рейс 1"/"Рейс 2", которые каждый день начинаются заново).
+        - Маршрут_ID — идентификатор маршрута вида "1M-00xxxxx" (номер
+          заказа, на который проставлен тариф "1 точка"). Если внутри
+          одного "Рейс N" встречается несколько ненулевых "1 точка" — это
+          разные под-маршруты с разными базовыми тарифами; каждая такая
+          строка начинает новый Маршрут_ID, и все последующие строки (до
+          следующего маркера) относятся к нему.
         - Регион_тариф — регион, нормализованный к тарифной зоне (например,
           Янгиюль/Ангрен/Чирчик -> Ташкент, Коканд -> Фергана), по словарю
           region_tariff_map (по умолчанию DEFAULT_REGION_TARIFF_MAP).
 
-    Группировка — по (Дата, Рейс), т.к. номера рейсов ("Рейс 1", "Рейс 2"...)
-    повторяются день в день и относятся к разным маршрутам.
+    Группировка для расчёта тарифа за штуку — по (Дата, Маршрут_ID), т.к.
+    именно это и есть настоящий физический маршрут (в отличие от "Рейс N",
+    который может объединять несколько разных маршрутов с разными тарифами).
     """
     if ship_df.empty:
         return ship_df
@@ -279,7 +283,27 @@ def add_route_economics(ship_df: pd.DataFrame, region_tariff_map: dict = None) -
     region_map = region_tariff_map if region_tariff_map is not None else DEFAULT_REGION_TARIFF_MAP
 
     df = ship_df.copy()
-    grp_cols = ["Дата", "Рейс"]
+
+    # Маршрут_ID: если в пределах одного "Рейс N" встречается НЕСКОЛЬКО
+    # ненулевых "1 точка" — это на самом деле разные под-маршруты (разные
+    # базовые тарифы), а не один рейс с несколькими точками. Каждая строка
+    # с "1 точка" > 0 начинает новый маршрут (Маршрут_ID = номер этого
+    # заказа); все следующие строки (до следующего такого маркера)
+    # принадлежат этому же маршруту — включая "2 точка и далее" и повторные
+    # заказы без собственного тарифа.
+    def _assign_route_ids(g: pd.DataFrame) -> pd.Series:
+        is_anchor = g["Точка_1"] > 0
+        anchor_id = g["Заказ"].where(is_anchor).ffill().bfill()
+        if anchor_id.isna().all():
+            anchor_id = pd.Series(g["Заказ"].iloc[0], index=g.index)
+        return anchor_id.infer_objects(copy=False)
+
+    df["Маршрут_ID"] = (
+        df.groupby(["Дата", "Рейс"], dropna=False, sort=False, group_keys=False)[["Заказ", "Точка_1"]]
+        .apply(_assign_route_ids)
+    )
+
+    grp_cols = ["Дата", "Маршрут_ID"]
     route_totals = (
         df.groupby(grp_cols, dropna=False)
         .agg(Сумма_маршрута=("Итого_сумма", "sum"), Кол_во_шт_маршрута=("Кол_во_шт", "sum"))
@@ -291,12 +315,6 @@ def add_route_economics(ship_df: pd.DataFrame, region_tariff_map: dict = None) -
     )
     df = df.merge(route_totals, on=grp_cols, how="left")
     df["Сумма_распределенная"] = df["Кол_во_шт"] * df["Тариф_за_шт"]
-
-    # Маршрут_ID = номер первого заказа, встреченного в группе (Дата, Рейс),
-    # в порядке появления строк в исходнике (это и есть "якорный" заказ,
-    # на который проставлен тариф "1 точка").
-    anchor = df.groupby(grp_cols, dropna=False, sort=False)["Заказ"].transform("first")
-    df["Маршрут_ID"] = anchor
 
     df["Регион_тариф"] = df["Регион"].map(lambda r: region_map.get(r, r) if r is not None else r)
 
@@ -585,43 +603,68 @@ def build_billing_workbook(ship_df: pd.DataFrame, tariffs_df: pd.DataFrame) -> b
     return buf.getvalue()
 
 
+def _fix_date_columns(df: pd.DataFrame, date_cols) -> pd.DataFrame:
+    """Приводит колонки с датами к чистому python date (без времени 00:00:00)."""
+    df = df.copy()
+    for col in date_cols:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col]).dt.date
+    return df
+
+
+def _apply_date_format(ws, col_letters, n_rows):
+    for letter in col_letters:
+        for r in range(2, n_rows + 2):
+            ws[f"{letter}{r}"].number_format = "YYYY-MM-DD"
+
+
 def build_excel_report(daily: pd.DataFrame, store_detail: pd.DataFrame, summary: pd.DataFrame,
-                        sla: pd.DataFrame, registry: pd.DataFrame) -> bytes:
+                        registry: pd.DataFrame) -> bytes:
     """
-    Собирает единый Excel-отчёт с несколькими листами, включая "Реестр" —
-    построчный аудит исходных данных, из которых получены все агрегаты
-    (по нему можно проверить/пересчитать любую цифру в отчёте вручную).
+    Собирает расширенный Excel-отчёт (без SLA — для него отдельный экспорт,
+    см. build_sla_workbook) с листами:
+      - "Отгрузки по дням"
+      - "Детали по магазинам" (с колонкой "Город")
+      - "Сводная"
+      - "Реестр (аудит)" — построчный аудит исходных данных, из которых
+        получены все агрегаты (по нему можно проверить/пересчитать любую
+        цифру в отчёте вручную).
     """
     from io import BytesIO as _BytesIO
+
+    daily = _fix_date_columns(daily, ["Дата"]) if daily is not None else daily
+    store_detail = _fix_date_columns(store_detail, ["Дата"]) if store_detail is not None else store_detail
+    registry = _fix_date_columns(registry, ["Дата"]) if registry is not None else registry
 
     buf = _BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
         if daily is not None and not daily.empty:
             daily.to_excel(writer, sheet_name="Отгрузки по дням", index=False)
+            _apply_date_format(writer.sheets["Отгрузки по дням"], ["A"], len(daily))
         if store_detail is not None and not store_detail.empty:
             store_detail.to_excel(writer, sheet_name="Детали по магазинам", index=False)
+            _apply_date_format(writer.sheets["Детали по магазинам"], ["A"], len(store_detail))
         if summary is not None and not summary.empty:
             summary.to_excel(writer, sheet_name="Сводная", index=False)
-        if sla is not None and not sla.empty:
-            sla.to_excel(writer, sheet_name="SLA план-факт", index=False)
         if registry is not None and not registry.empty:
             registry.to_excel(writer, sheet_name="Реестр (аудит)", index=False)
+            _apply_date_format(writer.sheets["Реестр (аудит)"], ["A"], len(registry))
 
-        notes = pd.DataFrame(
-            {
-                "Пояснение": [
-                    "Реестр (аудит) — построчные данные по каждому заказу в каждом рейсе.",
-                    "Тариф_за_шт = Сумма_маршрута (сумма 'Итого сумма' по всем заказам рейса) "
-                    "/ Кол_во_шт_маршрута (сумма кол-ва штук по всем заказам рейса).",
-                    "Сумма_распределенная (в реестре) = Кол-во_шт заказа * Тариф_за_шт — "
-                    "так стоимость доставки рейса размазана по всем штукам пропорционально, "
-                    "а не только на первую точку маршрута.",
-                    "В листах 'Детали по магазинам' и 'Сводная' используется именно "
-                    "Сумма_распределенная, поэтому суммы по каждому магазину корректны "
-                    "даже если в него было несколько заказов за день.",
-                ]
-            }
-        )
-        notes.to_excel(writer, sheet_name="Как считается", index=False)
+    return buf.getvalue()
+
+
+def build_sla_workbook(sla: pd.DataFrame) -> bytes:
+    """Отдельный Excel-файл с SLA (план vs факт), с чистыми датами (без времени)."""
+    from io import BytesIO as _BytesIO
+
+    sla = _fix_date_columns(sla, ["Дата_план", "Дата_факт"]) if sla is not None else sla
+
+    buf = _BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        if sla is not None and not sla.empty:
+            sla.to_excel(writer, sheet_name="SLA план-факт", index=False)
+            _apply_date_format(writer.sheets["SLA план-факт"], ["D", "F"], len(sla))
+        else:
+            pd.DataFrame({"Инфо": ["Нет данных для SLA"]}).to_excel(writer, sheet_name="SLA план-факт", index=False)
 
     return buf.getvalue()
