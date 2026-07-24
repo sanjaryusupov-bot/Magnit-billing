@@ -44,9 +44,18 @@ DEFAULT_REGION_TARIFF_MAP = {
     "Коканд": "Фергана",
 }
 
-# Регионы, для которых при кол-ве штук >= 3000 на маршрут автоматически
-# доплачивается "грузчик-экспедитор" (см. add_route_economics).
-LONG_HAUL_LOADER_FEE_REGIONS = {"Самарканд", "Фергана", "Наманган", "Андижан", "Навои", "Бухара"}
+# "Ташкентская зона" — регионы, которые по DEFAULT_REGION_TARIFF_MAP
+# сворачиваются в тарифную зону "Ташкент" (Ташкент сам плюс его
+# спутники: Ангрен, Сырдарья, Ташобласть - Нурафшон, Ташобласть - Чирчик,
+# Янгиюль). Для этой зоны логика автодоплаты "грузчик-экспедитор" НЕ
+# применяется — значения "Грузчик экспедитор"/"Итого сумма" берутся из
+# исходной Google-таблицы как есть, без пересчёта (см. add_route_economics).
+TASHKENT_ZONE_TARIFF = "Ташкент"
+
+# Порог кол-ва штук на маршрут (в пределах Дата+Рейс+Регион), при
+# достижении/превышении которого на маршрут положена доплата
+# "грузчик-экспедитор" — но только для регионов ВНЕ ташкентской зоны.
+LOADER_FEE_MIN_QTY = 3000
 LOADER_FEE_AMOUNT = 440000
 
 # Справочник тарифов по умолчанию (копия листа "тарифы" из примера биллинга
@@ -267,44 +276,37 @@ def add_route_economics(ship_df: pd.DataFrame, region_tariff_map: dict = None) -
            по всем штукам маршрута пропорционально, а не только на первую
            точку.
 
-    Дополнительно (для биллинг-реестра, формат как в примере заказчика) —
-    ДВА варианта идентификатора маршрута:
-        - Маршрут_ID_первый_заказ — простой вариант: номер ПЕРВОГО заказа,
-          встреченного в блоке (Дата, Рейс) исходника, без какого-либо
-          разделения (как в самом первом варианте реестра). Идёт в колонку
-          "Рейс" биллинг-отчёта. Отражает исходную разбивку по "Рейс N" из
-          самой Google-таблицы как есть.
-        - Маршрут_ID — "умный" вариант с разделением ПО РЕГИОНУ, но уже НЕ в
-          рамках одного блока "Рейс N", а в рамках ВСЕГО ДНЯ (Дата): все
-          строки за один день с одинаковым Регион_тариф считаются ОДНИМ
-          маршрутом (Маршрут_ID = номер первого заказа этого региона за
-          день), независимо от того, в каком именно блоке "Рейс N"
-          исходной Google-таблицы они физически находились и чередуются ли
-          они с другими регионами. Например, если один и тот же регион
-          (скажем, "Фергана") встречается и в "Рейс 1", и в "Рейс 3" за
-          один день — это ОДИН маршрут с одним Маршрут_ID, а не два. Идёт в
-          колонку "Рейс 2" биллинг-отчёта и используется для расчёта
-          Тариф_за_шт/Сумма_распределенная и для доплаты грузчика (это
-          финансово корректная группировка).
+    Дополнительно (для биллинг-реестра, формат как в примере заказчика):
+        - Маршрут_ID — идентификатор рейса вида "1M-00xxxxx" (номер первого
+          заказа в рейсе), уникальный в пределах всей выгрузки (в отличие от
+          "Рейс 1"/"Рейс 2", которые каждый день начинаются заново).
         - Регион_тариф — регион, нормализованный к тарифной зоне (например,
           Янгиюль/Ангрен/Чирчик -> Ташкент, Коканд -> Фергана), по словарю
           region_tariff_map (по умолчанию DEFAULT_REGION_TARIFF_MAP).
 
-    Доплата "грузчик-экспедитор" (LONG_HAUL_LOADER_FEE_REGIONS): для
-    маршрутов (Дата, Маршрут_ID) с регионом из списка Самарканд, Фергана,
-    Наманган, Андижан, Навои, Бухара (Коканд считается Фергана) — если
-    суммарное кол-во штук по маршруту >= 3000, к строке-якорю маршрута
-    добавляется 440 000 в "Грузчик экспедитор" и в "Итого сумма" (если там
-    уже не было учтено). Для остальных регионов (в т.ч. Ташкент) поведение
-    не меняется. Так как теперь Маршрут_ID объединяет регион в рамках всего
-    дня (а не одного "Рейс N"), порог 3000 шт считается по суммарному
-    объёму региона за весь день — это и определяет доплату.
+    Группировка — по (Дата, Рейс, Регион), т.к. номера рейсов ("Рейс 1",
+    "Рейс 2"...) повторяются день в день и относятся к разным маршрутам, а
+    внутри одного номера рейса иногда по ошибке смешаны заказы из разных
+    городов (см. ниже) — в этом случае рейс разбивается по региону, и
+    заказ(ы) из "чужого" города становятся отдельным маршрутом со своим
+    Маршрут_ID (якорь — первый заказ этого города в исходном порядке строк),
+    а не размазывают тариф на заказы из другого города.
 
-    Группировка для расчёта тарифа за штуку — по (Дата, Маршрут_ID), т.к.
-    именно это и есть настоящий физический маршрут (в отличие от "Рейс N",
-    который может объединять несколько разных маршрутов с разными тарифами,
-    либо наоборот — один и тот же маршрут/регион может быть искусственно
-    разбит исходной таблицей на несколько "Рейс N").
+    Доплата "грузчик-экспедитор" (LOADER_FEE_AMOUNT = 440 000):
+        - Считается по маршруту (та же группировка Дата+Рейс+Регион).
+        - Применяется ТОЛЬКО если Регион_тариф маршрута НЕ "Ташкент" — т.е.
+          для ташкентской зоны (Ташкент, Ангрен, Сырдарья,
+          Ташобласть - Нурафшон, Ташобласть - Чирчик, Янгиюль — все они по
+          region_tariff_map сворачиваются в "Ташкент") доплата вообще не
+          трогается: "Грузчик экспедитор" и "Итого сумма" остаются ровно
+          такими, какими пришли из исходной Google-таблицы.
+        - Для остальных регионов поле "Грузчик экспедитор" пересчитывается
+          с нуля (любое ошибочно проставленное в исходнике значение
+          убирается): если суммарное кол-во штук по маршруту >= 3000, ровно
+          одной (якорной) строке маршрута проставляется 440 000, у всех
+          остальных строк маршрута — 0. "Итого сумма" для этих строк
+          пересчитывается как "1 точка" + "2 точка и далее" +
+          "Грузчик экспедитор".
     """
     if ship_df.empty:
         return ship_df
@@ -312,50 +314,36 @@ def add_route_economics(ship_df: pd.DataFrame, region_tariff_map: dict = None) -
     region_map = region_tariff_map if region_tariff_map is not None else DEFAULT_REGION_TARIFF_MAP
 
     df = ship_df.copy()
+    grp_cols = ["Дата", "Рейс", "Регион"]
+
     df["Регион_тариф"] = df["Регион"].map(lambda r: region_map.get(r, r) if r is not None else r)
 
-    # Маршрут_ID_первый_заказ: наивный вариант — просто номер первого заказа
-    # в блоке (Дата, Рейс), без разделения. Идёт в колонку "Рейс". Эта
-    # колонка отражает исходную разбивку "Рейс N" из Google-таблицы как есть
-    # и НЕ меняется при объединении регионов ниже.
-    df["Маршрут_ID_первый_заказ"] = df.groupby(
-        ["Дата", "Рейс"], dropna=False, sort=False
-    )["Заказ"].transform("first")
+    # Маршрут_ID = номер первого заказа, встреченного в группе (Дата, Рейс,
+    # Регион), в порядке появления строк в исходнике (это и есть "якорный"
+    # заказ, на который проставляется тариф "1 точка" / доплата грузчика).
+    anchor = df.groupby(grp_cols, dropna=False, sort=False)["Заказ"].transform("first")
+    df["Маршрут_ID"] = anchor
 
-    # Маршрут_ID: группируем СТРОГО по Регион_тариф в рамках ВСЕГО ДНЯ
-    # (а не в рамках одного блока "Рейс N", как раньше) — все строки одного
-    # региона за день получают номер первого заказа этого региона за день,
-    # даже если исходно они были в разных блоках "Рейс N" таблицы.
-    def _assign_route_ids(g: pd.DataFrame) -> pd.Series:
-        orders = g["Заказ"].tolist()
-        regions = g["Регион_тариф"].tolist()
-        region_to_anchor = {}
-        result = []
-        for order, region in zip(orders, regions):
-            anchor = region_to_anchor.setdefault(region, order)
-            result.append(anchor)
-        return pd.Series(result, index=g.index)
-
-    marshrut_id = pd.Series(index=df.index, dtype=object)
-    for _, idx in df.groupby(["Дата"], dropna=False, sort=False).groups.items():
-        marshrut_id.loc[idx] = _assign_route_ids(df.loc[idx])
-    df["Маршрут_ID"] = marshrut_id
-
-    # Доплата "грузчик-экспедитор" для междугородних маршрутов большого
-    # объёма (см. докстринг). Считаем кол-во штук по (Дата, Маршрут_ID) ДО
-    # добавления доплаты (сама доплата не зависит от кол-ва штук).
-    qty_per_route = df.groupby(["Дата", "Маршрут_ID"], dropna=False)["Кол_во_шт"].transform("sum")
-    region_per_route = df.groupby(["Дата", "Маршрут_ID"], dropna=False)["Регион_тариф"].transform("first")
+    # --- Доплата "грузчик-экспедитор" ---------------------------------
+    qty_per_route = df.groupby(grp_cols, dropna=False)["Кол_во_шт"].transform("sum")
     is_anchor_row = df["Заказ"] == df["Маршрут_ID"]
-    eligible = (
-        region_per_route.isin(LONG_HAUL_LOADER_FEE_REGIONS)
-        & (qty_per_route >= 3000)
-        & is_anchor_row
-    )
-    df.loc[eligible, "Грузчик_экспедитор"] = df.loc[eligible, "Грузчик_экспедитор"] + LOADER_FEE_AMOUNT
-    df.loc[eligible, "Итого_сумма"] = df.loc[eligible, "Итого_сумма"] + LOADER_FEE_AMOUNT
+    is_tashkent_zone = df["Регион_тариф"] == TASHKENT_ZONE_TARIFF
 
-    grp_cols = ["Дата", "Маршрут_ID"]
+    # Для ташкентской зоны ничего не трогаем — значения остаются как в
+    # исходной таблице. Для остальных регионов пересчитываем с нуля.
+    recalc_mask = ~is_tashkent_zone
+
+    df.loc[recalc_mask, "Грузчик_экспедитор"] = 0.0
+    eligible = recalc_mask & is_anchor_row & (qty_per_route >= LOADER_FEE_MIN_QTY)
+    df.loc[eligible, "Грузчик_экспедитор"] = LOADER_FEE_AMOUNT
+
+    df.loc[recalc_mask, "Итого_сумма"] = (
+        df.loc[recalc_mask, "Точка_1"]
+        + df.loc[recalc_mask, "Точка_2_и_далее"]
+        + df.loc[recalc_mask, "Грузчик_экспедитор"]
+    )
+    # --------------------------------------------------------------------
+
     route_totals = (
         df.groupby(grp_cols, dropna=False)
         .agg(Сумма_маршрута=("Итого_сумма", "sum"), Кол_во_шт_маршрута=("Кол_во_шт", "sum"))
@@ -469,155 +457,168 @@ def _sla_flag(row):
     return "Просрочка"
 
 
-def build_billing_workbook(ship_df: pd.DataFrame) -> bytes:
+def attach_city(ship_df: pd.DataFrame, orders_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Собирает Excel-файл с одним листом "Реестр" — построчно по каждому
-    заказу, колонки как в примере заказчика (Дата отгрузки, Заказ, Рейс,
-    Кол-во штук, ID магазина, Магазин, Адрес, Координаты x2, Регион,
-    Регион тариф, Авто, 1 точка, 2 точка и далее, Грузчик экспедитор,
-    Итого сумма). Оформлен как настоящая Excel-таблица (с автофильтром) —
-    источник данных, из которого в Excel за 2 клика строится живая сводная
-    таблица с двойным кликом "Показать детали" (см. README).
+    Добавляет колонку "Город" в ship_df: берётся из листа "Статус по заказам"
+    (по номеру заказа), с фолбэком на колонку "Регион" из "Статус по
+    отгрузкам", если заказ там не найден. Используется во всех местах, где
+    нужен город — вкладка "Сводная", "Детали по магазинам", экспорт.
+    """
+    df = ship_df.copy()
+    if orders_df is not None and not orders_df.empty and "Город" in orders_df.columns:
+        df = df.merge(orders_df[["Заказ", "Город"]], on="Заказ", how="left")
+    else:
+        df["Город"] = None
+    df["Город"] = df["Город"].fillna(df["Регион"])
+    return df
 
-    ship_df должен быть уже отфильтрован (период, только 1M- и т.п.) и
-    содержать колонки, которые добавляет add_route_economics().
+
+# Формат дат во всех Excel-экспортах — ISO (2026-07-01), по просьбе заказчика.
+_ISO_DATE_FMT = "yyyy-mm-dd"
+
+
+def _prepare_registry_df(ship_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Готовит построчный реестр для экспорта: без "Подрядчик", с "Городом"
+    (см. attach_city — должен быть уже вызван до этого), с датой как date
+    (не datetime, чтобы в Excel не показывало "00:00:00").
+
+    "Итого сумма" в реестре — это ЧЕСТНО РАСПРЕДЕЛЁННАЯ сумма
+    (Сумма_распределенная, см. add_route_economics). Исходный тариф из
+    таблицы (до распределения) остаётся отдельной колонкой
+    "Тариф (исходный)" — для сверки/аудита.
+    """
+    df = ship_df.sort_values(["Дата", "Маршрут_ID", "Заказ"]).copy()
+    out = pd.DataFrame(
+        {
+            "Дата": df["Дата"].dt.date,
+            "Заказ": df["Заказ"],
+            "Рейс": df["Маршрут_ID"],
+            "Кол-во шт": df["Кол_во_шт"],
+            "ID магазина": df["ID_магазина"],
+            "Магазин": df["Магазин"],
+            "Адрес": df["Адрес"],
+            "Координаты 1": df["Координаты_1"],
+            "Координаты 2": df["Координаты_2"],
+            "Регион": df["Регион"],
+            "Регион тариф": df["Регион_тариф"],
+            "Город": df["Город"] if "Город" in df.columns else df["Регион"],
+            "Авто": df["Транспорт"],
+            "1 точка": df["Точка_1"],
+            "2 точка и далее": df["Точка_2_и_далее"],
+            "Грузчик экспедитор": df["Грузчик_экспедитор"],
+            "Тариф (исходный)": df["Итого_сумма"],
+            "Итого сумма": df["Сумма_распределенная"],
+        }
+    )
+    return out.reset_index(drop=True)
+
+
+def build_registry_export(ship_df: pd.DataFrame) -> bytes:
+    """
+    Excel-экспорт — ровно один лист "Реестр", построчно по каждому заказу
+    (оформлен как Excel-таблица с фильтрами). Без "Подрядчик". Даты — в
+    формате 2026-07-01. Остальные сводные вкладки (по решению заказчика) в
+    файл не включаются — сводки считаются в самом приложении (вкладки
+    "Отгрузки по дням" / "Сводная"), а не в выгрузке.
+
+    ship_df должен быть уже отфильтрован (период) и содержать колонки,
+    которые добавляют add_route_economics() и attach_city().
     """
     from io import BytesIO as _BytesIO
 
-    from openpyxl import Workbook
+    import openpyxl as _openpyxl
+    from openpyxl.styles import Font, PatternFill
     from openpyxl.utils import get_column_letter
     from openpyxl.worksheet.table import Table, TableStyleInfo
 
-    wb = Workbook()
-    DATE_FMT = "YYYY-MM-DD"
+    wb = _openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Реестр"
 
-    def _autosize(ws, ncols, min_width=10, max_width=45):
-        for c in range(1, ncols + 1):
-            letter = get_column_letter(c)
-            max_len = min_width
-            for row in ws.iter_rows(min_col=c, max_col=c):
-                v = row[0].value
-                if v is not None:
-                    max_len = max(max_len, len(str(v)))
-            ws.column_dimensions[letter].width = min(max_len + 2, max_width)
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="4C78A8")
 
-    ws3 = wb.active
-    ws3.title = "Реестр"
-    registry_cols = [
-        "Дата отгрузки", "Заказ", "Рейс", "Рейс 2", "Кол-во штук", "ID магазина", "Магазин", "Адрес",
-        "Координаты", "Координаты2", "Регион", "Регион тариф", "Авто",
-        "1 точка", "2 точка и далее", "Грузчик экспедитор", "Итого сумма",
-    ]
-    ws3.append(registry_cols)
+    registry = _prepare_registry_df(ship_df)
+    registry_cols = list(registry.columns)
+    date_col_idx = registry_cols.index("Дата") + 1  # 1-based
 
-    n_data_rows = 0
-    if not ship_df.empty:
-        reg = ship_df.sort_values(["Дата", "Маршрут_ID", "Заказ"])
-        for _, row in reg.iterrows():
-            ws3.append(
-                [
-                    row["Дата"].date(),
-                    row["Заказ"],
-                    row["Маршрут_ID_первый_заказ"],
-                    row["Маршрут_ID"],
-                    row["Кол_во_шт"],
-                    row["ID_магазина"],
-                    row["Магазин"],
-                    row["Адрес"],
-                    row["Координаты_1"],
-                    row["Координаты_2"],
-                    row["Регион"],
-                    row["Регион_тариф"],
-                    row["Транспорт"],
-                    row["Точка_1"],
-                    row["Точка_2_и_далее"],
-                    row["Грузчик_экспедитор"],
-                    row["Итого_сумма"],
-                ]
-            )
-            n_data_rows += 1
+    ws.append(registry_cols)
+    for c in range(1, len(registry_cols) + 1):
+        ws.cell(row=1, column=c).font = header_font
+        ws.cell(row=1, column=c).fill = header_fill
 
-    for row in ws3.iter_rows(min_row=2, max_row=ws3.max_row, min_col=1, max_col=1):
-        row[0].number_format = DATE_FMT
-    _autosize(ws3, len(registry_cols), max_width=40)
+    for row in registry.itertuples(index=False):
+        ws.append(list(row))
 
-    if n_data_rows > 0:
-        last_col_letter = get_column_letter(len(registry_cols))
-        table_ref = f"A1:{last_col_letter}{n_data_rows + 1}"
-        tbl = Table(displayName="ТаблицаРеестр", ref=table_ref)
-        tbl.tableStyleInfo = TableStyleInfo(
-            name="TableStyleMedium2", showRowStripes=True, showFirstColumn=False,
-            showLastColumn=False, showColumnStripes=False,
-        )
-        ws3.add_table(tbl)
+    last_row = 1 + len(registry)
+    if last_row > 1:
+        table_ref = f"A1:{get_column_letter(len(registry_cols))}{last_row}"
+        tbl = Table(displayName="ReestrTable", ref=table_ref)
+        tbl.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
+        ws.add_table(tbl)
+        for r in range(2, last_row + 1):
+            ws.cell(row=r, column=date_col_idx).number_format = _ISO_DATE_FMT
+
+    for c in range(1, len(registry_cols) + 1):
+        letter = get_column_letter(c)
+        max_len = 10
+        for row in ws.iter_rows(min_col=c, max_col=c):
+            v = row[0].value
+            if v is not None:
+                max_len = max(max_len, len(str(v)))
+        ws.column_dimensions[letter].width = min(max_len + 2, 42)
+    ws.freeze_panes = "A2"
 
     buf = _BytesIO()
     wb.save(buf)
     return buf.getvalue()
 
 
-def _fix_date_columns(df: pd.DataFrame, date_cols) -> pd.DataFrame:
-    """Приводит колонки с датами к чистому python date (без времени 00:00:00)."""
-    df = df.copy()
-    for col in date_cols:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col]).dt.date
-    return df
-
-
-def _apply_date_format(ws, col_letters, n_rows):
-    for letter in col_letters:
-        for r in range(2, n_rows + 2):
-            ws[f"{letter}{r}"].number_format = "YYYY-MM-DD"
-
-
-def build_excel_report(daily: pd.DataFrame, store_detail: pd.DataFrame, summary: pd.DataFrame,
-                        registry: pd.DataFrame) -> bytes:
-    """
-    Собирает расширенный Excel-отчёт (без SLA — для него отдельный экспорт,
-    см. build_sla_workbook) с листами:
-      - "Отгрузки по дням"
-      - "Детали по магазинам" (с колонкой "Город")
-      - "Сводная"
-      - "Реестр (аудит)" — построчный аудит исходных данных, из которых
-        получены все агрегаты (по нему можно проверить/пересчитать любую
-        цифру в отчёте вручную).
-    """
+def build_sla_export(sla_df: pd.DataFrame) -> bytes:
+    """Отдельный Excel-файл с SLA (план vs факт) — не входит в основной отчёт."""
     from io import BytesIO as _BytesIO
 
-    daily = _fix_date_columns(daily, ["Дата"]) if daily is not None else daily
-    store_detail = _fix_date_columns(store_detail, ["Дата"]) if store_detail is not None else store_detail
-    registry = _fix_date_columns(registry, ["Дата"]) if registry is not None else registry
+    import openpyxl as _openpyxl
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    wb = _openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "SLA план-факт"
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="4C78A8")
+
+    if sla_df is None or sla_df.empty:
+        ws.append(["Нет данных"])
+    else:
+        cols = list(sla_df.columns)
+        ws.append(cols)
+        for c in range(1, len(cols) + 1):
+            ws.cell(row=1, column=c).font = header_font
+            ws.cell(row=1, column=c).fill = header_fill
+        date_cols = [i for i, c in enumerate(cols) if c.startswith("Дата_")]
+        for _, row in sla_df.iterrows():
+            vals = []
+            for i, c in enumerate(cols):
+                v = row[c]
+                if i in date_cols:
+                    v = v.date() if pd.notna(v) and hasattr(v, "date") else None
+                vals.append(v)
+            ws.append(vals)
+        for i in date_cols:
+            for r in range(2, ws.max_row + 1):
+                ws.cell(row=r, column=i + 1).number_format = _ISO_DATE_FMT
+        for c in range(1, len(cols) + 1):
+            letter = get_column_letter(c)
+            max_len = max(
+                (len(str(ws.cell(row=r, column=c).value or "")) for r in range(1, ws.max_row + 1)),
+                default=10,
+            )
+            ws.column_dimensions[letter].width = min(max_len + 2, 40)
+        ws.freeze_panes = "A2"
 
     buf = _BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        if daily is not None and not daily.empty:
-            daily.to_excel(writer, sheet_name="Отгрузки по дням", index=False)
-            _apply_date_format(writer.sheets["Отгрузки по дням"], ["A"], len(daily))
-        if store_detail is not None and not store_detail.empty:
-            store_detail.to_excel(writer, sheet_name="Детали по магазинам", index=False)
-            _apply_date_format(writer.sheets["Детали по магазинам"], ["A"], len(store_detail))
-        if summary is not None and not summary.empty:
-            summary.to_excel(writer, sheet_name="Сводная", index=False)
-        if registry is not None and not registry.empty:
-            registry.to_excel(writer, sheet_name="Реестр (аудит)", index=False)
-            _apply_date_format(writer.sheets["Реестр (аудит)"], ["A"], len(registry))
-
-    return buf.getvalue()
-
-
-def build_sla_workbook(sla: pd.DataFrame) -> bytes:
-    """Отдельный Excel-файл с SLA (план vs факт), с чистыми датами (без времени)."""
-    from io import BytesIO as _BytesIO
-
-    sla = _fix_date_columns(sla, ["Дата_план", "Дата_факт"]) if sla is not None else sla
-
-    buf = _BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        if sla is not None and not sla.empty:
-            sla.to_excel(writer, sheet_name="SLA план-факт", index=False)
-            _apply_date_format(writer.sheets["SLA план-факт"], ["D", "F"], len(sla))
-        else:
-            pd.DataFrame({"Инфо": ["Нет данных для SLA"]}).to_excel(writer, sheet_name="SLA план-факт", index=False)
-
+    wb.save(buf)
     return buf.getvalue()
