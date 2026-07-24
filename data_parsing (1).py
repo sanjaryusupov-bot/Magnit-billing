@@ -303,8 +303,26 @@ def add_route_economics(ship_df: pd.DataFrame, region_tariff_map: dict = None) -
 
     region_map = region_tariff_map if region_tariff_map is not None else DEFAULT_REGION_TARIFF_MAP
 
+    def _norm(s):
+        """Приводит регион к устойчивому виду для сравнения/поиска в справочнике
+        (убирает пробелы по краям и регистр), чтобы 'Коканд', ' Коканд' и
+        'коканд' не считались разными регионами и не ломали группировку."""
+        if s is None:
+            return None
+        return str(s).strip()
+
+    def _region_key(s):
+        n = _norm(s)
+        return n.casefold() if n is not None else None
+
+    # Нормализованный справочник (ключи без пробелов/регистра), чтобы поиск
+    # тарифной зоны не ломался на пробелах/регистре в исходных данных.
+    region_map_norm = {_region_key(k): v for k, v in region_map.items()}
+
     df = ship_df.copy()
-    df["Регион_тариф"] = df["Регион"].map(lambda r: region_map.get(r, r) if r is not None else r)
+    df["Регион_тариф"] = df["Регион"].map(
+        lambda r: region_map_norm.get(_region_key(r), _norm(r)) if r is not None else r
+    )
 
     # Маршрут_ID_первый_заказ: наивный вариант — просто номер первого заказа
     # в блоке (Дата, Рейс), без разделения. Идёт в колонку "Рейс".
@@ -316,13 +334,16 @@ def add_route_economics(ship_df: pd.DataFrame, region_tariff_map: dict = None) -
     # Регион_тариф — все строки одного региона получают номер первого
     # заказа этого региона в блоке, независимо от того, чередуются ли
     # регионы построчно (Наманган/Коканд/Наманган -> 2 маршрута, не 3).
+    # Ключ группировки нормализуется (_region_key), чтобы скрытые пробелы
+    # или разница в регистре не создавали ложный "новый" регион.
     def _assign_route_ids(g: pd.DataFrame) -> pd.Series:
         orders = g["Заказ"].tolist()
         regions = g["Регион_тариф"].tolist()
         region_to_anchor = {}
         result = []
         for order, region in zip(orders, regions):
-            anchor = region_to_anchor.setdefault(region, order)
+            key = _region_key(region)
+            anchor = region_to_anchor.setdefault(key, order)
             result.append(anchor)
         return pd.Series(result, index=g.index)
 
