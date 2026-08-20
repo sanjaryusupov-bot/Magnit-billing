@@ -1,3 +1,4 @@
+[19.08.2026 13:57] Санжар: 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -16,16 +17,14 @@ from data_parsing import (
 st.set_page_config(page_title="MCOS — статус по отгрузкам с РЦ", layout="wide", page_icon="📦")
 
 # Единая цветовая палитра для графиков
-COLOR_QTY = "
-#4C78A8"
-COLOR_SUM = "
-#F58518"
-COLOR_RATE = "
-#54A24B"
+COLOR_QTY = "#4C78A8"
+COLOR_SUM = "#F58518"
+COLOR_RATE = "#54A24B"
 COLOR_BG = "rgba(0,0,0,0)"
 
 # Таблица подключена жёстко — поле ввода ID убрано из интерфейса.
 SHEET_ID = "12CxJMCBUHgkaj-_KbOs1aK7hx_jEYMyS3q4Hh0bHTGw"
+
 
 def fmt_int(v):
     try:
@@ -33,11 +32,13 @@ def fmt_int(v):
     except (TypeError, ValueError):
         return "—"
 
+
 def fmt_money(v):
     try:
         return f"{v:,.0f}".replace(",", " ")
     except (TypeError, ValueError):
         return "—"
+
 
 def fmt_rate(v):
     try:
@@ -45,10 +46,12 @@ def fmt_rate(v):
     except (TypeError, ValueError):
         return "—"
 
+
 @st.cache_data(show_spinner="Загружаю данные...", ttl=300)
 def _load(sheet_id: str, _creds_marker: str):
     creds_info = dict(st.secrets["gcp_service_account"])
     return load_from_gsheet_service_account(sheet_id, creds_info)
+
 
 # ---------------------------------------------------------------------------
 # Sidebar
@@ -121,7 +124,7 @@ st.title("📦 MCOS — статус по отгрузкам с РЦ")
 tab1, tab2, tab3, tab4 = st.tabs(
     [
         "📅 Отгрузки по дням",
-        "🗺️ Сводная",
+        "🗺 Сводная",
         "⏱️ SLA",
         "📤 Экспорт в Excel",
     ]
@@ -207,6 +210,7 @@ with tab1:
     store_detail_all["Сумма_за_шт"] = store_detail_all.apply(
         lambda r: (r["Сумма"] / r["Кол_во_шт"]) if r["Кол_во_шт"] else 0.0, axis=1
     )
+[19.08.2026 13:57] Санжар: 
 
     st.markdown("#### 🔽 Детали по дню")
     if not daily.empty:
@@ -322,18 +326,13 @@ with tab3:
         c4.metric("Не отгружен", not_shipped, f"{(not_shipped/total*100):.0f}%" if total else "0%")
 
         status_counts = sla_f["SLA_статус"].value_counts()
-        status_colors = {"В срок": "
-#54A24B", "Просрочка": "
-#E45756", "Не отгружен": "
-#B0B0B0", "Нет плана": "
-#EECA3B"}
+        status_colors = {"В срок": "#54A24B", "Просрочка": "#E45756", "Не отгружен": "#B0B0B0", "Нет плана": "#EECA3B"}
         fig3 = go.Figure(
             go.Pie(
                 labels=status_counts.index,
                 values=status_counts.values,
                 hole=0.55,
-                marker=dict(colors=[status_colors.get(s, "
-#4C78A8") for s in status_counts.index]),
+                marker=dict(colors=[status_colors.get(s, "#4C78A8") for s in status_counts.index]),
                 textinfo="label+percent",
             )
         )
@@ -395,16 +394,20 @@ with tab4:
     with st.expander("Как за 2 клика построить сводную таблицу из этого файла"):
         st.markdown(
             """
-Лист «Реестр» сохранён как настоящая таблица Excel (ТаблицаРеестр), поэтому
+Лист «Реестр» сохранён как настоящая таблица Excel (`ТаблицаРеестр`), поэтому
 Excel сам предложит её как источник:
 
-Кликните в любую ячейку таблицы на листе **Реестр**.
-**Вставка → Сводная таблица → OK** (источник подставится автоматически).
-В поля перетащите, например: Строки — Регион тариф, Авто, Дата отгрузки, Рейс; Значения — Сумма по полю Итого сумма, Сумма по полю Кол-во штук.
+1. Кликните в любую ячейку таблицы на листе **Реестр**.
+2. **Вставка → Сводная таблица → OK** (источник подставится автоматически).
+3. В поля перетащите, например: Строки — `Регион тариф`, `Авто`,
+   `Дата отгрузки`, `Рейс`; Значения — `Сумма по полю Итого сумма`,
+   `Сумма по полю Кол-во штук`.
+
 Двойной клик по ячейке суммы в готовой сводной таблице откроет исходные
 строки заказов — стандартное поведение сводных таблиц Excel.
             """
         )
+[19.08.2026 13:57] Санжар: 
 
     with st.expander("Справочник тарифов (для справки, в файл не входит)"):
         show_tariffs = tariffs_df if not tariffs_df.empty else default_tariffs_df()
