@@ -22,7 +22,7 @@ COLOR_RATE = "#54A24B"
 COLOR_BG = "rgba(0,0,0,0)"
 
 # Таблица подключена жёстко — поле ввода ID убрано из интерфейса.
-SHEET_ID = "1rljH9sYaQJzQZeLFcHrKY2AgZ1gHqCwAhJiAZwh1bUg"
+SHEET_ID = "12CxJMCBUHgkaj-_KbOs1aK7hx_jEYMyS3q4Hh0bHTGw"
 
 
 def fmt_int(v):
