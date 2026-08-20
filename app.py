@@ -209,8 +209,6 @@ with tab1:
     store_detail_all["Сумма_за_шт"] = store_detail_all.apply(
         lambda r: (r["Сумма"] / r["Кол_во_шт"]) if r["Кол_во_шт"] else 0.0, axis=1
     )
-[19.08.2026 13:57] Санжар: 
-
     st.markdown("#### 🔽 Детали по дню")
     if not daily.empty:
         day_options = daily["Дата"].dt.date.tolist()
@@ -406,8 +404,6 @@ Excel сам предложит её как источник:
 строки заказов — стандартное поведение сводных таблиц Excel.
             """
         )
-[19.08.2026 13:57] Санжар: 
-
     with st.expander("Справочник тарифов (для справки, в файл не входит)"):
         show_tariffs = tariffs_df if not tariffs_df.empty else default_tariffs_df()
         st.dataframe(show_tariffs, use_container_width=True, hide_index=True)
